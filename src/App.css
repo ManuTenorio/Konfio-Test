@@ -1,0 +1,11 @@
+.App {
+  text-align: center;
+}
+
+.frame {
+	background-color: white;
+    font: inherit;
+    border: 1px solid blue;
+    padding: 16px;
+    color: white;
+}

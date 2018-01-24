@@ -36,7 +36,7 @@ class App extends Component {
     ],
     selectedCurrency: 'USD',
     currencyName: 'Selecciona una divisa',
-    selectedScope: 1,
+    selectedScope: 2,
     latestRate: "",
     data: {},
     axis: {},
@@ -60,6 +60,50 @@ class App extends Component {
     this.fixerIOinquiry(currencySymbol,this.state.selectedScope);
   }
 
+/*
+  * Helper function to run an asynchronous loop that depends on the information fetched from
+  * the fixer.io server.
+  * @params
+  *   - iterations to be run
+  *   - process to be excecuted
+  *   - callback when the loop has finally finished
+*/
+syncLoop = (iterations, process, exit) =>{
+    var index = 0,
+        done = false,
+        shouldExit = false;
+    var loop = {
+        next:function(){
+            if(done){
+                if(shouldExit && exit){
+                    return exit(); // Exit if we're done
+                }
+            }
+            // If we're not finished
+            if(index < iterations){
+                index++; // Increment our index
+                process(loop); // Run our process, pass in the loop
+            // Otherwise we're done
+            } else {
+                done = true; // Make sure we say we're done
+                if(exit) exit(); // Call the callback on exit
+            }
+        },
+        iteration:function(){
+            return index - 1; // Return the loop number we're on
+        },
+        break:function(end){
+            done = true; // End the loop
+            shouldExit = end; // Passing end as true means we still call the exit callback
+        }
+    };
+    console.log("next loop iteration");
+    loop.next();
+    return loop;
+}
+
+
+
 
 /*
   *   Core of the application. Once the currency symbol of the selected option is determined,
@@ -78,7 +122,7 @@ class App extends Component {
     let addData = () => {
       newYdata.unshift(rates.MXN);
       //handle async. update of state
-      if(scopeCase === 1 && newYdata.length === 7){
+      if(scopeCase === 2 && newYdata.length === 15){
 
         newYdata.unshift('Pesos mexicanos');
         //form the necessary parameters to use the c3 graph component and save them
@@ -96,12 +140,13 @@ class App extends Component {
           y: {
             tick: {
             format: d3.format('.5f')
-        }
-    }         
+            }
+          }         
         }
         this.setState({axis: newAxis});
 
         this.setState({ready: true});
+        console.log("--- ready to plot");
       }
     }
     let addLatest= () =>{
@@ -136,6 +181,54 @@ class App extends Component {
           .then((data) => rates = data.rates)
           .then(addData)
         }
+        fetch('https://api.fixer.io/latest?base='+currencySymbol,
+          {
+          headers : {   
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+            }
+          })
+        .then((resp) => resp.json())
+        .then((data) => latest = data.rates)
+        .then(addLatest)
+        break;
+      //second case: data of the last month
+      case 2:
+        console.log('second case: one month');
+        
+        var monthLoop= this.syncLoop(15,function(loop){
+            //syntesize required date in YYYY-MM-DD format
+            date= new Date();
+            var iteration= loop.iteration() + 1;
+            console.log("iteration: "+iteration);
+            date.setDate(date.getDate() - 2*loop.iteration());
+            year= date.getFullYear();
+            month= date.getMonth() + 1;
+            monthSTR= "0"+month;
+            monthSTR= monthSTR.substr(monthSTR.length - 2);
+            day= date.getDate();
+            daySTR= "0"+day;
+            daySTR= daySTR.substr(daySTR.length - 2);
+            xValue= ""+monthSTR+"/"+daySTR;
+            newXdata.unshift(xValue);
+            dateSTR= ""+year+"-"+monthSTR+"-"+day;
+            console.log("date string: "+dateSTR);
+            fetch('https://api.fixer.io/'+dateSTR+'?base='+currencySymbol,
+              {
+              headers : { 
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+               }
+             })
+            .then((resp) => resp.json())
+            .then((data) => rates = data.rates)
+            .then(function(){
+              console.log("adding new Ydata");
+              newYdata.unshift(rates.MXN);
+              loop.next();
+            })
+        },function(){console.log("done with month loop")});  
+        
         fetch('https://api.fixer.io/latest?base='+currencySymbol,
           {
           headers : {   
